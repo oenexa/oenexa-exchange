@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "domain": "com.oenexa.exchange",
+  "version": "1.0.0",
+  "events": [
+    {
+      "type": "com.oenexa.exchange.trade.executed.v1",
+      "description": "Emitted when a trade execution occurs in the matching engine",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "tradeId": { "type": "string" },
+              "pair": { "type": "string" },
+              "price": { "type": "number" },
+              "quantity": { "type": "number" },
+              "buyerId": { "type": "string" },
+              "sellerId": { "type": "string" },
+              "executedAt": { "type": "string" }
+            },
+            "required": ["tradeId", "pair", "price", "quantity"]
+          }
+        }
+      }
+    }
+  ]
+}

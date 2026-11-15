@@ -1,0 +1,111 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OENEXA Institutional Exchange & Matching Engine API",
+    "version": "1.0.0",
+    "description": "Ultra-low latency in-memory matching engine for limit, market, and iceberg orders."
+  },
+  "servers": [
+    {
+      "url": "https://app.oenexa.com/api/exchange",
+      "description": "Exchange API Route"
+    }
+  ],
+  "paths": {
+    "/v1/orders": {
+      "post": {
+        "summary": "Submit Order to Matching Engine",
+        "operationId": "placeOrder",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order matched or placed in book",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderMatchResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/orderbook/{pair}": {
+      "get": {
+        "summary": "Get Order Book Snapshot",
+        "operationId": "getOrderBook",
+        "parameters": [
+          { "name": "pair", "in": "path", "required": true, "schema": { "type": "string" }, "example": "ONXC/USDT" },
+          { "name": "depth", "in": "query", "required": false, "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Order book depth snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderBookSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "OrderRequest": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string" },
+          "pair": { "type": "string", "example": "ONXC/USDT" },
+          "side": { "type": "string", "enum": ["BUY", "SELL"] },
+          "type": { "type": "string", "enum": ["LIMIT", "MARKET", "STOP_LIMIT", "ICEBERG"] },
+          "price": { "type": "number" },
+          "quantity": { "type": "number" }
+        },
+        "required": ["userId", "pair", "side", "type", "quantity"]
+      },
+      "OrderMatchResult": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "string" },
+          "status": { "type": "string", "enum": ["FILLED", "PARTIALLY_FILLED", "OPEN"] },
+          "trades": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tradeId": { "type": "string" },
+                "price": { "type": "number" },
+                "quantity": { "type": "number" }
+              }
+            }
+          }
+        },
+        "required": ["status", "trades"]
+      },
+      "OrderBookSnapshot": {
+        "type": "object",
+        "properties": {
+          "pair": { "type": "string" },
+          "timestamp": { "type": "string" },
+          "bids": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+          "asks": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } }
+        },
+        "required": ["pair", "bids", "asks"]
+      }
+    }
+  }
+}

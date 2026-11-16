@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { createCloudEvent, type CloudEvent } from '@oenexa/event-schemas';
+import { createCloudEvent, type CloudEvent } from '../domain/events.js';
 import { OrderBook } from '../engine/OrderBook.js';
 import type { Order, Trade, OrderSide, OrderType, OrderBookSnapshot } from '../domain/types.js';
 

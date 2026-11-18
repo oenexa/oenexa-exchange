@@ -1,14 +1,28 @@
 import crypto from 'node:crypto';
 import { createCloudEvent, type CloudEvent } from '../domain/events.js';
 import { OrderBook } from '../engine/OrderBook.js';
-import type { Order, Trade, OrderSide, OrderType, OrderBookSnapshot } from '../domain/types.js';
+import type {
+  Order,
+  Trade,
+  OrderSide,
+  OrderType,
+  OrderBookSnapshot,
+  RiskConfig,
+} from '../domain/types.js';
 
 export class ExchangeService {
   private books = new Map<string, OrderBook>();
   private trades = new Map<string, Trade[]>(); // pair -> trades
   private outbox: CloudEvent<any>[] = [];
+  private riskConfig: RiskConfig;
 
-  constructor() {
+  constructor(customRisk?: Partial<RiskConfig>) {
+    this.riskConfig = {
+      maxOrderQuantity: 10000,
+      minNotionalValue: 1.0,
+      priceBandPercentage: 0.2, // 20% price band collar
+      ...customRisk,
+    };
     this.registerPair('ONXC/USDT');
     this.registerPair('BTC/USDT');
     this.registerPair('ETH/USDT');
@@ -29,6 +43,9 @@ export class ExchangeService {
     type: OrderType;
     price: number;
     quantity: number;
+    stopPrice?: number;
+    limitPrice?: number;
+    trailingDelta?: number;
   }): { order: Order; trades: Trade[] } {
     const key = params.pair.toUpperCase();
     const book = this.books.get(key);
@@ -36,12 +53,8 @@ export class ExchangeService {
       throw new Error(`Trading pair '${params.pair}' is not supported.`);
     }
 
-    if (params.quantity <= 0) {
-      throw new Error('Order quantity must be strictly greater than 0.');
-    }
-    if (params.type === 'LIMIT' && params.price <= 0) {
-      throw new Error('Limit order price must be strictly greater than 0.');
-    }
+    // Pre-trade risk validation
+    this.validatePreTradeRisk(book, params);
 
     const orderId = `ord_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const order: Order = {
@@ -55,6 +68,9 @@ export class ExchangeService {
       filledQuantity: 0,
       status: 'NEW',
       createdAt: new Date().toISOString(),
+      stopPrice: params.stopPrice,
+      limitPrice: params.limitPrice,
+      trailingDelta: params.trailingDelta,
     };
 
     const { trades } = book.submitOrder(order);
@@ -76,6 +92,59 @@ export class ExchangeService {
     }
 
     return { order, trades };
+  }
+
+  private validatePreTradeRisk(
+    book: OrderBook,
+    params: {
+      type: OrderType;
+      price: number;
+      quantity: number;
+      limitPrice?: number;
+      stopPrice?: number;
+    }
+  ): void {
+    if (params.quantity <= 0) {
+      throw new Error('Order quantity must be strictly greater than 0.');
+    }
+    if (params.quantity > this.riskConfig.maxOrderQuantity) {
+      throw new Error(
+        `Pre-trade risk violation: Order quantity ${params.quantity} exceeds maximum limit of ${this.riskConfig.maxOrderQuantity}.`
+      );
+    }
+
+    if (params.type === 'LIMIT' && params.price <= 0) {
+      throw new Error('Limit order price must be strictly greater than 0.');
+    }
+
+    // Min notional value check
+    const effectivePrice =
+      params.type === 'LIMIT'
+        ? params.price
+        : params.limitPrice ?? params.stopPrice ?? params.price;
+
+    if (effectivePrice > 0) {
+      const notional = effectivePrice * params.quantity;
+      if (notional < this.riskConfig.minNotionalValue) {
+        throw new Error(
+          `Pre-trade risk violation: Order notional value (${notional.toFixed(2)}) is below minimum of ${this.riskConfig.minNotionalValue} USDT.`
+        );
+      }
+    }
+
+    // Price band collar check against mid-market price
+    if (params.type === 'LIMIT') {
+      const depth = book.getDepth(1);
+      if (depth.bids.length > 0 && depth.asks.length > 0) {
+        const midPrice = (depth.bids[0].price + depth.asks[0].price) / 2;
+        const deviation = Math.abs(params.price - midPrice) / midPrice;
+        if (deviation > this.riskConfig.priceBandPercentage) {
+          throw new Error(
+            `Pre-trade risk violation: Limit price ${params.price} deviates by ${(deviation * 100).toFixed(1)}% from mid-market price ${midPrice.toFixed(2)} (max allowed: ${(this.riskConfig.priceBandPercentage * 100).toFixed(0)}%).`
+          );
+        }
+      }
+    }
   }
 
   public cancelOrder(pair: string, orderId: string): boolean {

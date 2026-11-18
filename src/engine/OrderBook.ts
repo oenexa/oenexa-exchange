@@ -11,10 +11,16 @@ export class OrderBook {
   public readonly pair: string;
   private bids: Order[] = []; // sorted descending by price, then ascending by time
   private asks: Order[] = []; // sorted ascending by price, then ascending by time
+  private conditionalOrders: Order[] = []; // Stop-Limit and Trailing-Stop orders
   private orderIndex = new Map<string, Order>();
+  private lastTradePrice: number | null = null;
 
   constructor(pair: string) {
     this.pair = pair.toUpperCase();
+  }
+
+  public getLastTradePrice(): number | null {
+    return this.lastTradePrice;
   }
 
   /**
@@ -22,12 +28,32 @@ export class OrderBook {
    */
   public submitOrder(order: Order): { trades: Trade[]; remainingOrder?: Order } {
     this.orderIndex.set(order.id, order);
+
+    // Handle conditional order intake
+    if (order.type === 'STOP_LIMIT' || order.type === 'TRAILING_STOP') {
+      order.status = 'PENDING_TRIGGER';
+      if (order.type === 'TRAILING_STOP') {
+        const refPrice = this.lastTradePrice ?? order.price;
+        order.highWatermark = refPrice;
+        order.lowWatermark = refPrice;
+      }
+      this.conditionalOrders.push(order);
+      return { trades: [], remainingOrder: order };
+    }
+
     const trades: Trade[] = [];
 
     if (order.side === 'BUY') {
       this.matchBuyOrder(order, trades);
     } else {
       this.matchSellOrder(order, trades);
+    }
+
+    // Update last trade price and evaluate conditional triggers
+    if (trades.length > 0) {
+      this.lastTradePrice = trades[trades.length - 1].price;
+      const triggeredTrades = this.evaluateConditionalTriggers(this.lastTradePrice);
+      trades.push(...triggeredTrades);
     }
 
     let remainingOrder: Order | undefined;
@@ -45,6 +71,77 @@ export class OrderBook {
     }
 
     return { trades, remainingOrder };
+  }
+
+  /**
+   * Evaluates pending conditional orders (Stop-Limit, Trailing-Stop) against the new trade price
+   */
+  public evaluateConditionalTriggers(currentPrice: number): Trade[] {
+    const triggeredTrades: Trade[] = [];
+    const remainingConditionals: Order[] = [];
+
+    for (const ord of this.conditionalOrders) {
+      let isTriggered = false;
+
+      if (ord.type === 'STOP_LIMIT') {
+        const stopPrice = ord.stopPrice ?? ord.price;
+        if (ord.side === 'BUY' && currentPrice >= stopPrice) {
+          isTriggered = true;
+        } else if (ord.side === 'SELL' && currentPrice <= stopPrice) {
+          isTriggered = true;
+        }
+      } else if (ord.type === 'TRAILING_STOP') {
+        const delta = ord.trailingDelta ?? (ord.price * 0.02); // default 2%
+        if (ord.side === 'SELL') {
+          ord.highWatermark = Math.max(ord.highWatermark ?? currentPrice, currentPrice);
+          if (currentPrice <= ord.highWatermark - delta) {
+            isTriggered = true;
+          }
+        } else {
+          ord.lowWatermark = Math.min(ord.lowWatermark ?? currentPrice, currentPrice);
+          if (currentPrice >= ord.lowWatermark + delta) {
+            isTriggered = true;
+          }
+        }
+      }
+
+      if (isTriggered) {
+        ord.status = 'TRIGGERED';
+        if (ord.type === 'STOP_LIMIT') {
+          // Transition to active Limit order at limitPrice
+          ord.type = 'LIMIT';
+          ord.price = ord.limitPrice ?? ord.price;
+        } else {
+          // Trailing-Stop executes as aggressive Market order
+          ord.type = 'MARKET';
+        }
+
+        const matchTrades: Trade[] = [];
+        if (ord.side === 'BUY') {
+          this.matchBuyOrder(ord, matchTrades);
+        } else {
+          this.matchSellOrder(ord, matchTrades);
+        }
+        triggeredTrades.push(...matchTrades);
+
+        const currentStatus = ord.status as string;
+        if (currentStatus !== 'FILLED') {
+          if (ord.type === 'LIMIT') {
+            this.addRestingOrder(ord);
+          } else {
+            ord.status = 'CANCELLED';
+            this.orderIndex.delete(ord.id);
+          }
+        } else {
+          this.orderIndex.delete(ord.id);
+        }
+      } else {
+        remainingConditionals.push(ord);
+      }
+    }
+
+    this.conditionalOrders = remainingConditionals;
+    return triggeredTrades;
   }
 
   private matchBuyOrder(taker: Order, trades: Trade[]): void {
@@ -162,6 +259,7 @@ export class OrderBook {
     } else {
       this.asks = this.asks.filter((o) => o.id !== orderId);
     }
+    this.conditionalOrders = this.conditionalOrders.filter((o) => o.id !== orderId);
 
     return true;
   }

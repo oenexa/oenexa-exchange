@@ -10,6 +10,7 @@ export * from './engine/PreTradeRiskCollarEngine.js';
 export * from './service/ExchangeService.js';
 export * from './service/TradeSettlementBridge.js';
 export * from './gateway/FixProtocolGateway.js';
+export * from './benchmark/MatchingEngineBenchmark.js';
 
 const exchange = new ExchangeService();
 const settlementBridge = new TradeSettlementBridge();

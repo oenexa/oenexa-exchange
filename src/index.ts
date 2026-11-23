@@ -1,15 +1,18 @@
 import http from 'node:http';
 import { ExchangeService } from './service/ExchangeService.js';
 import { TradeSettlementBridge } from './service/TradeSettlementBridge.js';
+import { PreTradeRiskCollarEngine } from './engine/PreTradeRiskCollarEngine.js';
 
 export * from './domain/types.js';
 export * from './domain/events.js';
 export * from './engine/OrderBook.js';
+export * from './engine/PreTradeRiskCollarEngine.js';
 export * from './service/ExchangeService.js';
 export * from './service/TradeSettlementBridge.js';
 
 const exchange = new ExchangeService();
 const settlementBridge = new TradeSettlementBridge();
+const riskCollarEngine = new PreTradeRiskCollarEngine();
 const PORT = Number(process.env.PORT) || 8082;
 
 export const server = http.createServer((req, res) => {

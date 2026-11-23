@@ -9,6 +9,7 @@ export * from './engine/OrderBook.js';
 export * from './engine/PreTradeRiskCollarEngine.js';
 export * from './service/ExchangeService.js';
 export * from './service/TradeSettlementBridge.js';
+export * from './gateway/FixProtocolGateway.js';
 
 const exchange = new ExchangeService();
 const settlementBridge = new TradeSettlementBridge();

@@ -40,6 +40,8 @@ export interface Trade {
   pair: string;
   makerOrderId: string;
   takerOrderId: string;
+  makerUserId?: string;
+  takerUserId?: string;
   price: number;
   quantity: number;
   takerSide: OrderSide;

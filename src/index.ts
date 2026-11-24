@@ -11,6 +11,9 @@ export * from './service/ExchangeService.js';
 export * from './service/TradeSettlementBridge.js';
 export * from './gateway/FixProtocolGateway.js';
 export * from './benchmark/MatchingEngineBenchmark.js';
+export * from './automation/AutomatedRiskGuard.js';
+export * from './automation/StrategyEngine.js';
+export * from './automation/BacktestingFramework.js';
 
 const exchange = new ExchangeService();
 const settlementBridge = new TradeSettlementBridge();
